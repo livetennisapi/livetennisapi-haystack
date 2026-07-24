@@ -349,3 +349,14 @@ def test_run_integration():
     for doc in result["documents"]:
         assert isinstance(doc, Document)
         assert doc.content
+
+
+class TestNullPoints:
+    def test_null_points_entries_are_omitted(self):
+        """Seen in live data: a completed match with points [None, None]."""
+        payload = completed_payload()
+        payload["score"]["points"] = [None, None]
+        doc = match_to_document(Match.from_dict(payload))
+        assert "points" not in doc.content
+        assert "None" not in doc.content
+        assert doc.meta["points"] == [None, None]  # meta keeps the raw truth

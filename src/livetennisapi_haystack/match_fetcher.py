@@ -309,8 +309,10 @@ def _score_sentence(score: Any) -> str | None:
     games = _games_summary(score.games)
     if games:
         parts.append(f"games {games}")
-    if score.points and len(score.points) >= 2:
-        # Points are strings by contract ("0", "15", "30", "40", "AD").
+    # Points are strings by contract ("0", "15", "30", "40", "AD") — but live
+    # data shows completed matches can carry [None, None], so only render
+    # points when both sides actually exist.
+    if score.points and len(score.points) >= 2 and score.points[0] is not None and score.points[1] is not None:
         parts.append(f"points {score.points[0]}-{score.points[1]}")
     if score.is_tiebreak:
         parts.append("in a tiebreak")
