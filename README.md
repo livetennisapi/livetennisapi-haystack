@@ -106,7 +106,10 @@ A complete runnable script lives at [`examples/live_demo.py`](examples/live_demo
   (`"0"`, `"15"`, `"30"`, `"40"`, `"AD"`). The components tolerate all of it.
 - **Serialization**: both components implement `to_dict`/`from_dict`; the API key is stored
   as a `Secret` environment-variable reference, never as a value, so pipelines serialize
-  safely to YAML.
+  safely to YAML. Note that Haystack 3.0 refuses to deserialize third-party components
+  unless their module is allow-listed, so reload pipelines with
+  `Pipeline.loads(yaml_str, allowed_modules=["livetennisapi_haystack.match_fetcher", "livetennisapi_haystack.player_search"])`
+  (or `haystack.core.serialization.allow_deserialization_module(...)`).
 - **`tour` filter**: the API's documented `tour` query parameter is not yet exposed by
   `livetennisapi` 1.0.2's `list_matches()`, so the component routes that one call through
   the official client's transport layer (same auth/retries/error mapping).

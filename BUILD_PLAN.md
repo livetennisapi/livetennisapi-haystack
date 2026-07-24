@@ -1,5 +1,13 @@
 # BUILD_PLAN — livetennisapi-haystack
 
+> **Status (2026-07-24): ALL UNITS DONE.** BUILD-001..004 landed as commits 1-4; BUILD-005
+> verification passed (clean-venv install, 31 unit tests + 2 live integration tests green,
+> ruff clean, live pipeline smoke incl. doubles/null-server/tour-filter/serialization
+> round-trip, key-leak sweep 0 hits) and surfaced one real-data fix (points [None, None] on
+> completed matches), landed as commit 5. Verification finding: Haystack 3.0 requires
+> `allowed_modules=` to deserialize third-party components — documented in README.
+> Not done on purpose (out of scope by directive): PyPI publish, GitHub repo, catalog PR.
+
 ## Build target & source of truth
 Haystack 2.x integration package for the Live Tennis API. Greenfield standalone repo at
 `/var/tmp/haystack-build/livetennisapi-haystack`. No `PLAN.md`; source of truth is the task
