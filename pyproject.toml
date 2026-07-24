@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "livetennisapi-haystack"
+version = "0.1.0"
+description = "Haystack 2.x integration for the Live Tennis API: live scores, matches and players as Documents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["Haystack", "Tennis", "Live Scores", "Sports Data", "RAG", "Agents"]
+authors = [{ name = "Ben", email = "ben@ben-is-a.dev" }]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = ["haystack-ai>=2.24.1", "livetennisapi>=1.0.2"]
+
+[project.urls]
+Documentation = "https://github.com/bensynapse/livetennisapi-haystack#readme"
+Issues = "https://github.com/bensynapse/livetennisapi-haystack/issues"
+Source = "https://github.com/bensynapse/livetennisapi-haystack"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/livetennisapi_haystack"]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["A", "ARG", "B", "C", "E", "EM", "F", "I", "ICN", "ISC", "N", "PLC", "PLE", "PLW", "Q", "RUF", "S", "T", "TID", "UP", "W", "YTT"]
+ignore = [
+  # Allow function calls in argument defaults (Haystack pattern for Secret.from_env_var)
+  "B008",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["livetennisapi_haystack"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use magic values, assertions, and relative imports
+"tests/**/*" = ["PLR2004", "S101", "TID252"]
+"examples/**/*" = ["T201"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+markers = ["integration: integration tests (need LIVETENNISAPI_KEY and network)"]
