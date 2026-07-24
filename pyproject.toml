@@ -25,9 +25,9 @@ classifiers = [
 dependencies = ["haystack-ai>=2.24.1", "livetennisapi>=1.0.2"]
 
 [project.urls]
-Documentation = "https://github.com/bensynapse/livetennisapi-haystack#readme"
-Issues = "https://github.com/bensynapse/livetennisapi-haystack/issues"
-Source = "https://github.com/bensynapse/livetennisapi-haystack"
+Documentation = "https://github.com/livetennisapi/livetennisapi-haystack#readme"
+Issues = "https://github.com/livetennisapi/livetennisapi-haystack/issues"
+Source = "https://github.com/livetennisapi/livetennisapi-haystack"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/livetennisapi_haystack"]

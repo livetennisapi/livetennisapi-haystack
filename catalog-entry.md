@@ -7,9 +7,9 @@ authors:
       socials:
         github: bensynapse
 pypi: https://pypi.org/project/livetennisapi-haystack/
-repo: https://github.com/bensynapse/livetennisapi-haystack
+repo: https://github.com/livetennisapi/livetennisapi-haystack
 type: Data Ingestion
-report_issue: https://github.com/bensynapse/livetennisapi-haystack/issues
+report_issue: https://github.com/livetennisapi/livetennisapi-haystack/issues
 version: Haystack 2.0
 toc: true
 ---
