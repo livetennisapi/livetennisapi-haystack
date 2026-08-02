@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "livetennisapi-haystack"
-version = "0.1.0"
+version = "0.1.1"
 description = "Haystack 2.x integration for the Live Tennis API: live scores, matches and players as Documents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 keywords = ["Haystack", "Tennis", "Live Scores", "Sports Data", "RAG", "Agents"]
-authors = [{ name = "Ben", email = "ben@ben-is-a.dev" }]
+authors = [{ name = "Live Tennis API", email = "hello@livetennisapi.com" }]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Development Status :: 4 - Beta",

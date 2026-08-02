@@ -99,7 +99,10 @@ A complete runnable script lives at [`examples/live_demo.py`](examples/live_demo
   component returns a single readable `Document` (tagged `meta["error"] = "upgrade_required"`)
   instead of raising — an agent can tell the user; a RAG pipeline can filter it out. All
   other errors (bad key, network down, rate limit) still raise the official client's typed
-  exceptions.
+  exceptions. The case you will actually hit: `status="completed"` listings return 403 on a
+  free key — they need the BASIC tier ($9.99/mo) or any History plan
+  (<https://livetennisapi.com/subscribe/upgrade>). `status="live"` / `"upcoming"` and
+  single-match fetches via `match_id` (even for a completed match) work on the free tier.
 - **Sparse data is normal**: `score.server` is nullable (between points the feed may not
   know who serves next — the summary simply omits the serving sentence), doubles teams have
   no individual rankings and a null `data_completeness`, and points are strings
@@ -120,7 +123,10 @@ A complete runnable script lives at [`examples/live_demo.py`](examples/live_demo
 
 `LiveTennisMatchFetcher(api_key, status="live", tour=None, limit=10, base_url=None, timeout=30.0)`
 — `status`/`tour`/`limit` can be overridden per `run()`, and `run(match_id=...)` fetches a
-single match. `LiveTennisPlayerSearch(api_key, limit=10, base_url=None, timeout=30.0)` —
+single match. `status` is `"live"`, `"upcoming"` or `"completed"`; the first two work on the
+free tier, while `"completed"` listings need the BASIC tier ($9.99/mo) or any History plan —
+on a free key you get the `upgrade_required` Document described above.
+`LiveTennisPlayerSearch(api_key, limit=10, base_url=None, timeout=30.0)` —
 `run(query, limit=None)`.
 
 ## Development

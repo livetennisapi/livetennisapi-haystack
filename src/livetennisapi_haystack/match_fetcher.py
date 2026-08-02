@@ -55,6 +55,9 @@ class LiveTennisMatchFetcher:
             Live Tennis API key. Defaults to the ``LIVETENNISAPI_KEY`` environment variable.
         :param status:
             Default match lifecycle status to fetch: ``"live"``, ``"upcoming"`` or ``"completed"``.
+            ``"live"`` and ``"upcoming"`` work on the free tier; ``"completed"`` listings need the
+            BASIC tier ($9.99/mo) or any History plan — on a free key the API answers 403 and the
+            component returns a single ``upgrade_required`` Document (see :meth:`run`).
         :param tour:
             Optional default tour filter: ``"atp"``, ``"wta"``, ``"challenger"``, ``"itf"`` or
             ``"juniors"``. Each value covers its singles and doubles draws. ``None`` fetches all tours.
@@ -129,7 +132,10 @@ class LiveTennisMatchFetcher:
 
         :param status:
             Optional per-run override of the lifecycle status (``"live"``, ``"upcoming"``,
-            ``"completed"``). Ignored when ``match_id`` is given.
+            ``"completed"``). Ignored when ``match_id`` is given. ``"completed"`` listings need
+            the BASIC tier ($9.99/mo) or any History plan; on a free key they yield the
+            ``upgrade_required`` Document described below. ``match_id`` fetches — including
+            completed matches — stay on the free tier.
         :param tour:
             Optional per-run override of the tour filter. Ignored when ``match_id`` is given.
         :param limit:
