@@ -138,6 +138,10 @@ ruff check src tests examples
 LIVETENNISAPI_KEY=... pytest -m integration   # live tests, needs a key
 ```
 
+## Affiliate program
+
+Know developers who need tennis data? The [affiliate program](https://affiliates.livetennisapi.com/program) pays 51% recurring commission for the life of every referred subscription — 30-day cookie, and the people you refer get 10% off.
+
 ## License
 
 `livetennisapi-haystack` is distributed under the terms of the
