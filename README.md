@@ -20,7 +20,7 @@ client (retries, error mapping, typed models) — no hand-rolled HTTP.
 pip install livetennisapi-haystack
 ```
 
-You need a Live Tennis API key (free tier: 1000 requests/day, 30/min). Export it as an
+You need a Live Tennis API key (free tier: 100 requests/day, 30/min). Export it as an
 environment variable — the components read `LIVETENNISAPI_KEY` by default and never accept a
 plain-string key:
 
