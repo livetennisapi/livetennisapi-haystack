@@ -1,18 +1,19 @@
 # livetennisapi-haystack
 
 [Haystack](https://haystack.deepset.ai) 2.x integration for the
-[Live Tennis API](https://livetennisapi.com): live scores, matches and players as Haystack
-`Document`s for RAG and agent pipelines.
+[Live Tennis API](https://livetennisapi.com): live scores, matches, players, head-to-heads,
+the 1968-2022 results archive, rankings and in-play statistics across ATP, WTA, Challenger,
+ITF and juniors — as Haystack `Document`s for RAG and agent pipelines.
 
-- **`LiveTennisMatchFetcher`** — live / upcoming / completed matches (optionally one match by
-  id, optionally filtered by tour) as `Document`s. `content` is a clean human-readable match
-  summary; `meta` carries the structured fields (ids, players, sets/games/points, server,
-  winner).
-- **`LiveTennisPlayerSearch`** — player search by name, ranked players first, same
-  `Document` shape.
+[![ci](https://github.com/livetennisapi/livetennisapi-haystack/actions/workflows/ci.yml/badge.svg)](https://github.com/livetennisapi/livetennisapi-haystack/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/livetennisapi-haystack.svg)](https://pypi.org/project/livetennisapi-haystack/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://spdx.org/licenses/MIT.html)
 
-Built on the official [`livetennisapi`](https://pypi.org/project/livetennisapi/) Python
-client (retries, error mapping, typed models) — no hand-rolled HTTP.
+Every component returns `Document`s whose `content` is a clean human-readable summary and
+whose `meta` carries the structured fields — directly usable in prompts, document stores and
+agent tools. Built on the official
+[`livetennisapi`](https://pypi.org/project/livetennisapi/) Python client (retries, error
+mapping, typed models) — no hand-rolled HTTP.
 
 ## Installation
 
@@ -20,17 +21,14 @@ client (retries, error mapping, typed models) — no hand-rolled HTTP.
 pip install livetennisapi-haystack
 ```
 
-You need a Live Tennis API key (free tier: 100 requests/day, 30/min). Export it as an
-environment variable — the components read `LIVETENNISAPI_KEY` by default and never accept a
-plain-string key:
+Grab a free API key at <https://livetennisapi.com/subscribe/free> and export it — the
+components read `LIVETENNISAPI_KEY` by default and never accept a plain-string key:
 
 ```bash
-export LIVETENNISAPI_KEY="your-key"
+export LIVETENNISAPI_KEY="twjp_your_key_here"
 ```
 
-## Usage
-
-### Standalone
+## Quickstart
 
 ```python
 from livetennisapi_haystack import LiveTennisMatchFetcher
@@ -93,41 +91,80 @@ print(result["llm"]["replies"][0].text)
 
 A complete runnable script lives at [`examples/live_demo.py`](examples/live_demo.py).
 
+## Components
+
+| Component | What it fetches | API endpoint(s) | Tier |
+|---|---|---|---|
+| `LiveTennisMatchFetcher` | Live / upcoming / completed matches, one match by id; filters: `tour`, `player`, `country`, `from_`/`to` | `/matches`, `/matches/{id}` | FREE (`status="completed"` listings: BASIC or any History plan) |
+| `LiveTennisPlayerSearch` | Player search by name, ranked players first | `/players` | FREE |
+| `LiveTennisH2HFetcher` | Head-to-head between two players — results archive (1968-2022) + current matches (2023-now) in one record | `/h2h` | BASIC |
+| `LiveTennisArchiveFetcher` | The results archive: 1,485,752 matches 1968-2022 (`mode="matches"`), player bios (`mode="players"`), career aggregates (`mode="career"`) | `/history/archive/*` | BASIC |
+| `LiveTennisRankingsFetcher` | A published ranking table (`atp`, `wta`, `itf_jt`, `itf_mt`, `itf_wt`), optionally as of a past week | `/rankings` | PRO |
+| `LiveTennisMatchStatisticsFetcher` | In-play statistics: aces, double faults, serve split, hold/break %, break points | `/matches/{id}/statistics` | ULTRA |
+
+All tour-filterable components accept `tour` values `"atp"`, `"wta"`, `"challenger"`,
+`"itf"` and `"juniors"`; each value covers its singles and doubles draws.
+
+## Quotas
+
+| Tier | Requests/min | Requests/day | Price |
+|---|---|---|---|
+| FREE | 30 | 100 | $0 |
+| BASIC | 60 | 1,000 | $9.99/mo |
+| PRO | 300 | 10,000 | $29.99/mo |
+| ULTRA | 600 | 500,000 | $99.99/mo |
+
+At 100/day, poll no faster than every ~15 minutes on a free key; for an always-on dashboard,
+BASIC is the tier to recommend. Full details at <https://docs.livetennisapi.com>.
+
+## Authentication
+
+The components resolve the key through Haystack's `Secret` (from `LIVETENNISAPI_KEY` by
+default) and hand it to the official client, which sends it as an `Authorization: Bearer`
+header — the API's preferred scheme (`X-API-Key` and `?token=` also exist for clients that
+cannot set headers). Serialized pipelines carry only the environment-variable reference,
+never the key value.
+
 ## Behavior worth knowing
 
 - **403 tier wall**: when your key is valid but the plan does not unlock an endpoint, the
   component returns a single readable `Document` (tagged `meta["error"] = "upgrade_required"`)
-  instead of raising — an agent can tell the user; a RAG pipeline can filter it out. All
-  other errors (bad key, network down, rate limit) still raise the official client's typed
-  exceptions. The case you will actually hit: `status="completed"` listings return 403 on a
-  free key — they need the BASIC tier ($9.99/mo) or any History plan
+  instead of raising — an agent can tell the user; a RAG pipeline can filter it out. The case
+  you will actually hit: `status="completed"` listings return 403 on a free key — they need
+  the BASIC tier ($9.99/mo) or any History plan
   (<https://livetennisapi.com/subscribe/upgrade>). `status="live"` / `"upcoming"` and
   single-match fetches via `match_id` (even for a completed match) work on the free tier.
+- **429s**: the official client transparently retries the per-minute window (and if it still
+  surfaces, the component fails loud — that is a transient error). The two NON-retryable
+  shapes become readable Documents instead: the **daily cap** (tagged
+  `meta["error"] = "rate_limited"`, with `resets_at` — the absolute instant the day quota
+  resets, derived from a local midnight) and the **abuse throttle** (tagged
+  `"abuse_throttled"`, with `retry_at_epoch` — a 24-hour block for chronic over-cap clients;
+  fix the retry loop, retrying is what earns it).
+- **Ambiguous names**: the name-keyed endpoints (`/h2h`, archive career) refuse a fragment
+  matching more than one player; the component turns that into a Document tagged
+  `meta["error"] = "ambiguous_name"` carrying the candidate list, so an agent can ask which
+  one was meant.
 - **Sparse data is normal**: `score.server` is nullable (between points the feed may not
   know who serves next — the summary simply omits the serving sentence), doubles teams have
-  no individual rankings and a null `data_completeness`, and points are strings
-  (`"0"`, `"15"`, `"30"`, `"40"`, `"AD"`). The components tolerate all of it.
-- **Serialization**: both components implement `to_dict`/`from_dict`; the API key is stored
+  no individual rankings, points are strings (`"0"`, `"15"`, `"30"`, `"40"`, `"AD"`), and
+  archive-era fields (`stats` before 1991, per-match dates) are honestly `None`. The
+  components tolerate all of it and render only what exists.
+- **Serialization**: every component implements `to_dict`/`from_dict`; the API key is stored
   as a `Secret` environment-variable reference, never as a value, so pipelines serialize
   safely to YAML. Note that Haystack 3.0 refuses to deserialize third-party components
   unless their module is allow-listed, so reload pipelines with
-  `Pipeline.loads(yaml_str, allowed_modules=["livetennisapi_haystack.match_fetcher", "livetennisapi_haystack.player_search"])`
+  `Pipeline.loads(yaml_str, allowed_modules=["livetennisapi_haystack.match_fetcher", ...])`
   (or `haystack.core.serialization.allow_deserialization_module(...)`).
-- **`tour` filter**: the API's documented `tour` query parameter is not yet exposed by
-  `livetennisapi` 1.0.2's `list_matches()`, so the component routes that one call through
-  the official client's transport layer (same auth/retries/error mapping).
 - **Sync only** for now: `run()` — no `run_async` yet, although the official client has an
   async twin. Planned.
 
-## Parameters
+## Links
 
-`LiveTennisMatchFetcher(api_key, status="live", tour=None, limit=10, base_url=None, timeout=30.0)`
-— `status`/`tour`/`limit` can be overridden per `run()`, and `run(match_id=...)` fetches a
-single match. `status` is `"live"`, `"upcoming"` or `"completed"`; the first two work on the
-free tier, while `"completed"` listings need the BASIC tier ($9.99/mo) or any History plan —
-on a free key you get the `upgrade_required` Document described above.
-`LiveTennisPlayerSearch(api_key, limit=10, base_url=None, timeout=30.0)` —
-`run(query, limit=None)`.
+- Docs: <https://docs.livetennisapi.com>
+- Free API key: <https://livetennisapi.com/subscribe/free>
+- Discord: <https://discord.gg/f8WUZHgDm6>
+- GitHub org: <https://github.com/livetennisapi>
 
 ## Development
 
@@ -135,6 +172,7 @@ on a free key you get the `upgrade_required` Document described above.
 pip install -e . pytest ruff
 pytest                    # unit tests, fully mocked, no network
 ruff check src tests examples
+sh scripts/truthcheck.sh  # product-facts pin (also runs in CI)
 LIVETENNISAPI_KEY=... pytest -m integration   # live tests, needs a key
 ```
 
