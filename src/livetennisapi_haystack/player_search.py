@@ -3,10 +3,10 @@ from typing import Any
 from haystack import Document, component, default_from_dict, default_to_dict, logging
 from haystack.utils import Secret, deserialize_secrets_inplace
 from livetennisapi import LiveTennisAPI
-from livetennisapi.errors import UpgradeRequired
+from livetennisapi.errors import RateLimited, UpgradeRequired
 from livetennisapi.models import Player
 
-from ._util import iso_or_none, make_upgrade_document
+from ._util import iso_or_none, make_upgrade_document, quota_notice
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,9 @@ class LiveTennisPlayerSearch:
         :returns: A dictionary with:
             - ``documents``: one Document per player. If the API answers 403 (tier wall), a
               single Document tagged ``meta["error"] = "upgrade_required"`` carries the
-              readable message instead.
+              readable message instead; a daily-quota or abuse-throttle 429 becomes a Document
+              tagged ``rate_limited`` (with ``resets_at``) or ``abuse_throttled`` (with
+              ``retry_at_epoch``).
         """
         if self._client is None:
             self.warm_up()
@@ -128,6 +130,12 @@ class LiveTennisPlayerSearch:
         except UpgradeRequired as exc:
             logger.warning("Live Tennis API tier wall: {exc}", exc=exc)
             return {"documents": [make_upgrade_document(exc)]}
+        except RateLimited as exc:
+            notice = quota_notice(exc)
+            if notice is None:  # per-minute window: transient, already retried by the client
+                raise
+            logger.warning("Live Tennis API quota: {exc}", exc=exc)
+            return {"documents": [notice]}
 
         return {"documents": [player_to_document(p) for p in players if p is not None]}
 

@@ -5,7 +5,7 @@ import pytest
 from haystack import Document
 from haystack.core.serialization import component_from_dict, component_to_dict
 from haystack.utils import Secret
-from livetennisapi.errors import NotFound, UpgradeRequired
+from livetennisapi.errors import AbuseThrottled, NotFound, RateLimited, UpgradeRequired
 from livetennisapi.models import Match
 
 from livetennisapi_haystack import LiveTennisMatchFetcher
@@ -117,7 +117,6 @@ def as_matches(*payloads):
 def mock_client():
     client = MagicMock()
     client.list_matches.return_value = as_matches(live_singles_payload())
-    client._params.side_effect = lambda d: {k: v for k, v in d.items() if v is not None}
     return client
 
 
@@ -281,18 +280,32 @@ class TestRun:
 
         assert fetcher.run(match_id=999999)["documents"] == []
 
-    def test_tour_filter_goes_through_client_transport(self, mock_client):
-        mock_client._request.return_value = {"data": [live_singles_payload()], "meta": {"count": 1}}
+    def test_tour_filter_uses_native_client_parameter(self, mock_client):
         fetcher = LiveTennisMatchFetcher(api_key=Secret.from_token("k"), tour="atp")
         fetcher._client = mock_client
 
         docs = fetcher.run()["documents"]
 
         assert len(docs) == 1
-        mock_client._request.assert_called_once_with(
-            "/matches", {"status": "live", "tour": "atp", "limit": 10, "offset": 0}
+        mock_client.list_matches.assert_called_once_with(status="live", limit=10, tour="atp")
+
+    def test_new_filters_forwarded_to_client(self, mock_client):
+        fetcher = LiveTennisMatchFetcher(api_key=Secret.from_token("k"))
+        fetcher._client = mock_client
+
+        fetcher.run(player=[1, 2], country="ned", from_="2026-08-01", to="2026-08-02")
+
+        mock_client.list_matches.assert_called_once_with(
+            status="live", limit=10, player=[1, 2], country="ned", from_="2026-08-01", to="2026-08-02"
         )
-        mock_client.list_matches.assert_not_called()
+
+    def test_init_filter_defaults_used_when_run_omits_them(self, mock_client):
+        fetcher = LiveTennisMatchFetcher(api_key=Secret.from_token("k"), player=7, country="sui")
+        fetcher._client = mock_client
+
+        fetcher.run()
+
+        mock_client.list_matches.assert_called_once_with(status="live", limit=10, player=7, country="sui")
 
     def test_upgrade_required_becomes_readable_document(self, mock_client):
         mock_client.list_matches.side_effect = UpgradeRequired(
@@ -326,6 +339,56 @@ class TestRun:
 
         with pytest.raises(ValueError, match="status"):
             fetcher.run(status="paused")
+
+
+class TestQuota429s:
+    def test_daily_cap_becomes_readable_document(self, mock_client):
+        mock_client.list_matches.side_effect = RateLimited(
+            "rate_limited",
+            status_code=429,
+            body={"error": "rate_limited", "scope": "day", "limit_per_day": 100, "resets_at": "2026-08-07T21:00:00Z"},
+            retry_after=3600.0,
+        )
+        fetcher = LiveTennisMatchFetcher(api_key=Secret.from_token("k"))
+        fetcher._client = mock_client
+
+        docs = fetcher.run()["documents"]
+
+        assert len(docs) == 1
+        assert "daily quota exhausted" in docs[0].content
+        assert docs[0].meta["error"] == "rate_limited"
+        assert docs[0].meta["scope"] == "day"
+        assert docs[0].meta["limit_per_day"] == 100
+        assert docs[0].meta["resets_at"] == "2026-08-07T21:00:00+00:00"
+
+    def test_abuse_throttle_becomes_readable_document(self, mock_client):
+        mock_client.list_matches.side_effect = AbuseThrottled(
+            "abuse_throttled",
+            status_code=429,
+            body={"error": "abuse_throttled", "retry_at_epoch": 1754600400},
+        )
+        fetcher = LiveTennisMatchFetcher(api_key=Secret.from_token("k"))
+        fetcher._client = mock_client
+
+        docs = fetcher.run()["documents"]
+
+        assert len(docs) == 1
+        assert "abuse-throttled" in docs[0].content
+        assert "fix the retry loop" in docs[0].content
+        assert docs[0].meta["error"] == "abuse_throttled"
+        assert docs[0].meta["retry_at_epoch"] == 1754600400
+        assert docs[0].meta["retry_at"] is not None
+
+    def test_minute_window_429_still_raises(self, mock_client):
+        """The per-minute window is transient and already retried by the client — fail loud."""
+        mock_client.list_matches.side_effect = RateLimited(
+            "rate_limited", status_code=429, body={"error": "rate_limited"}, retry_after=12.0
+        )
+        fetcher = LiveTennisMatchFetcher(api_key=Secret.from_token("k"))
+        fetcher._client = mock_client
+
+        with pytest.raises(RateLimited):
+            fetcher.run()
 
 
 class TestMatchToDocument:

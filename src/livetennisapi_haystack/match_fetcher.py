@@ -3,10 +3,10 @@ from typing import Any
 from haystack import Document, component, default_from_dict, default_to_dict, logging
 from haystack.utils import Secret, deserialize_secrets_inplace
 from livetennisapi import LiveTennisAPI
-from livetennisapi.errors import NotFound, UpgradeRequired
+from livetennisapi.errors import NotFound, RateLimited, UpgradeRequired
 from livetennisapi.models import Match
 
-from ._util import iso_or_none, make_upgrade_document, player_label
+from ._util import iso_or_none, make_upgrade_document, player_label, quota_notice
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,10 @@ class LiveTennisMatchFetcher:
         api_key: Secret = Secret.from_env_var("LIVETENNISAPI_KEY"),
         status: str = "live",
         tour: str | None = None,
+        player: int | list[int] | None = None,
+        country: str | None = None,
+        from_: str | None = None,
+        to: str | None = None,
         limit: int = 10,
         base_url: str | None = None,
         timeout: float = 30.0,
@@ -61,6 +65,18 @@ class LiveTennisMatchFetcher:
         :param tour:
             Optional default tour filter: ``"atp"``, ``"wta"``, ``"challenger"``, ``"itf"`` or
             ``"juniors"``. Each value covers its singles and doubles draws. ``None`` fetches all tours.
+        :param player:
+            Optional default player filter — a player id (or a list of up to 50 ids to union):
+            matches where the player is EITHER participant.
+        :param country:
+            Optional default country filter — either participant's 3-letter lowercase country code.
+            The vocabulary is what the Player object returns (IOC-style, e.g. ``"ned"``, ``"sui"``),
+            not ISO-3166. Unknown filter values are refused by the API (400), never silently ignored.
+        :param from_:
+            Optional default lower play-date bound, ``YYYY-MM-DD`` or ISO-8601 UTC. A bare date
+            covers the whole UTC day.
+        :param to:
+            Optional default upper play-date bound, same formats as ``from_``.
         :param limit:
             Default maximum number of matches to return (1-200).
         :param base_url:
@@ -73,6 +89,10 @@ class LiveTennisMatchFetcher:
         self.api_key = api_key
         self.status = status
         self.tour = tour
+        self.player = player
+        self.country = country
+        self.from_ = from_
+        self.to = to
         self.limit = limit
         self.base_url = base_url
         self.timeout = timeout
@@ -103,6 +123,10 @@ class LiveTennisMatchFetcher:
             api_key=self.api_key.to_dict(),
             status=self.status,
             tour=self.tour,
+            player=self.player,
+            country=self.country,
+            from_=self.from_,
+            to=self.to,
             limit=self.limit,
             base_url=self.base_url,
             timeout=self.timeout,
@@ -124,6 +148,10 @@ class LiveTennisMatchFetcher:
         self,
         status: str | None = None,
         tour: str | None = None,
+        player: int | list[int] | None = None,
+        country: str | None = None,
+        from_: str | None = None,
+        to: str | None = None,
         limit: int | None = None,
         match_id: int | None = None,
     ) -> dict[str, Any]:
@@ -138,6 +166,18 @@ class LiveTennisMatchFetcher:
             completed matches — stay on the free tier.
         :param tour:
             Optional per-run override of the tour filter. Ignored when ``match_id`` is given.
+        :param player:
+            Optional per-run override of the player filter (id, or list of ids to union).
+            Ignored when ``match_id`` is given.
+        :param country:
+            Optional per-run override of the country filter (lowercase 3-letter code).
+            Ignored when ``match_id`` is given.
+        :param from_:
+            Optional per-run override of the lower play-date bound. Ignored when ``match_id``
+            is given.
+        :param to:
+            Optional per-run override of the upper play-date bound. Ignored when ``match_id``
+            is given.
         :param limit:
             Optional per-run override of the maximum number of matches (1-200).
         :param match_id:
@@ -147,7 +187,9 @@ class LiveTennisMatchFetcher:
             - ``documents``: one Document per match, ``content`` holding the readable summary
               and ``meta`` the structured fields. If the API answers 403 (tier wall), a single
               Document tagged ``meta["error"] = "upgrade_required"`` carries the readable
-              message instead.
+              message instead; a daily-quota or abuse-throttle 429 becomes a Document tagged
+              ``rate_limited`` (with ``resets_at``) or ``abuse_throttled`` (with
+              ``retry_at_epoch``).
         """
         if self._client is None:
             self.warm_up()
@@ -160,41 +202,48 @@ class LiveTennisMatchFetcher:
                 match = self._client.get_match(match_id)
                 matches = [match] if match is not None else []
             else:
-                matches = self._list_matches(status, tour, limit)
+                matches = self._list_matches(status, tour, player, country, from_, to, limit)
         except NotFound:
             logger.warning("Live Tennis API: match {match_id} not found", match_id=match_id)
             return {"documents": []}
         except UpgradeRequired as exc:
             logger.warning("Live Tennis API tier wall: {exc}", exc=exc)
             return {"documents": [make_upgrade_document(exc)]}
+        except RateLimited as exc:
+            notice = quota_notice(exc)
+            if notice is None:  # per-minute window: transient, already retried by the client
+                raise
+            logger.warning("Live Tennis API quota: {exc}", exc=exc)
+            return {"documents": [notice]}
 
         return {"documents": [match_to_document(m) for m in matches if m is not None]}
 
-    def _list_matches(self, status: str | None, tour: str | None, limit: int | None) -> list[Match]:
+    def _list_matches(
+        self,
+        status: str | None,
+        tour: str | None,
+        player: int | list[int] | None,
+        country: str | None,
+        from_: str | None,
+        to: str | None,
+        limit: int | None,
+    ) -> list[Match]:
         effective_status = status if status is not None else self.status
-        effective_tour = tour if tour is not None else self.tour
         effective_limit = max(1, min(int(limit if limit is not None else self.limit), _MAX_LIMIT))
         _validate_status(effective_status)
-        _validate_tour(effective_tour)
         assert self._client is not None  # noqa: S101 - checked by run()
 
-        if effective_tour is None:
-            return list(self._client.list_matches(status=effective_status, limit=effective_limit))
-
-        # The public /matches endpoint documents a `tour` query parameter
-        # (openapi.yaml, parameters.tour), but livetennisapi 1.0.2 does not yet
-        # expose it on list_matches(). Deliberate deviation: go through the
-        # official client's transport layer (retries, error mapping, auth)
-        # rather than hand-rolling HTTP. Switch to
-        # `client.list_matches(status=..., tour=...)` once the client grows it.
-        raw = self._client._request(
-            "/matches",
-            self._client._params(
-                {"status": effective_status, "tour": effective_tour, "limit": effective_limit, "offset": 0}
-            ),
-        )
-        items = (raw.get("data") or []) if isinstance(raw, dict) else (raw or [])
-        return [m for m in (Match.from_dict(i) for i in items) if m is not None]
+        kwargs: dict[str, Any] = {"status": effective_status, "limit": effective_limit}
+        filters = {
+            "tour": tour if tour is not None else self.tour,
+            "player": player if player is not None else self.player,
+            "country": country if country is not None else self.country,
+            "from_": from_ if from_ is not None else self.from_,
+            "to": to if to is not None else self.to,
+        }
+        _validate_tour(filters["tour"])
+        kwargs.update({key: value for key, value in filters.items() if value is not None})
+        return list(self._client.list_matches(**kwargs))
 
 
 def _validate_status(status: str) -> None:
@@ -242,11 +291,15 @@ def match_to_document(match: Match) -> Document:
         "match_id": match.id,
         "status": match.status,
         "event_status": match.event_status,
+        "tour": match.tour,
         "tournament": match.tournament,
+        "tournament_id": match.tournament_id,
         "surface": match.surface,
         "indoor": match.indoor,
         "format": match.format,
         "round": match.round,
+        "round_code": match.round_code,
+        "withdrew": match.withdrew,
         "is_doubles": match.is_doubles,
         "scheduled_time": iso_or_none(match.scheduled_time),
         "p1_id": getattr(p1, "id", None),
