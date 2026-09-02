@@ -5,7 +5,7 @@ from .player_search import LiveTennisPlayerSearch
 from .rankings_fetcher import LiveTennisRankingsFetcher
 from .statistics_fetcher import LiveTennisMatchStatisticsFetcher
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "LiveTennisArchiveFetcher",

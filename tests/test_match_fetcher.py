@@ -399,6 +399,31 @@ class TestMatchToDocument:
         assert "sets" not in doc.meta
         assert "Live now." in doc.content
 
+    def test_has_analysis_and_has_market_true(self):
+        # Every list row and the detail carry both booleans (every tier, since 2026-09-02).
+        payload = live_singles_payload()
+        payload.update({"has_analysis": True, "has_market": True})
+        doc = match_to_document(Match.from_dict(payload))
+        assert doc.meta["has_analysis"] is True
+        assert doc.meta["has_market"] is True
+
+    def test_has_analysis_and_has_market_false(self):
+        # False is an answer: nothing computed / no market mapped — filter the slate on it
+        # instead of spending a 404 on /matches/{id}/analysis or /markets/{id}/prices.
+        payload = live_singles_payload()
+        payload.update({"has_analysis": False, "has_market": False})
+        doc = match_to_document(Match.from_dict(payload))
+        assert doc.meta["has_analysis"] is False
+        assert doc.meta["has_market"] is False
+
+    def test_has_analysis_and_has_market_absent_means_none(self):
+        # A server that predates the field sends neither: the keys are still present, as None.
+        doc = match_to_document(Match.from_dict(live_singles_payload()))
+        assert "has_analysis" in doc.meta
+        assert "has_market" in doc.meta
+        assert doc.meta["has_analysis"] is None
+        assert doc.meta["has_market"] is None
+
 
 @pytest.mark.skipif(
     not os.environ.get("LIVETENNISAPI_KEY"),

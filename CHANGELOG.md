@@ -5,7 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-08-07
+## [0.3.0] - 2026-09-02
+
+### Added
+
+- Match Documents' `meta` gained `has_analysis` and `has_market` — whether a model
+  thesis/profile exists for the match and whether a match-winner market is mapped to it
+  (every tier, server side since 2026-09-02). They carry the same facts the per-match
+  analysis and market-prices endpoints answer 404 about, so a slate can be filtered in one
+  call. Both keys are always present: `None` when the server predates the field.
+
 
 ### Added
 

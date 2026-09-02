@@ -300,6 +300,13 @@ def match_to_document(match: Match) -> Document:
         "round": match.round,
         "round_code": match.round_code,
         "withdrew": match.withdrew,
+        # Whether a model thesis/profile exists and whether a match-winner market is
+        # mapped (every tier, since 2026-09-02) — the same facts the analysis and
+        # market-prices endpoints answer 404 about, so a slate can be filtered first.
+        # getattr: clients before livetennisapi 1.8.0 expose them only through the
+        # raw-payload fallback, and an older server sends neither (-> None).
+        "has_analysis": getattr(match, "has_analysis", None),
+        "has_market": getattr(match, "has_market", None),
         "is_doubles": match.is_doubles,
         "scheduled_time": iso_or_none(match.scheduled_time),
         "p1_id": getattr(p1, "id", None),
